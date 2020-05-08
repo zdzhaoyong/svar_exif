@@ -157,7 +157,7 @@ Svar read_camera(Svar meta)
 }
 
 #include "Matrix.h"
-#include <GSLAM/core/SE3.h>
+#include "SE3.h"
 
 using namespace GSLAM;
 
