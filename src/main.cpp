@@ -119,6 +119,9 @@ Svar read_gpsSigma(Svar meta){
 }
 
 Svar read_attitude(const Svar& meta){
+    if(meta["Xmp"]["Camera"]["Pitch"].isUndefined())
+        return {{"pitch",-90.},{"yaw",0.},{"roll",0.}};
+
     double pitch=std::stod(meta["Xmp"]["Camera"]["Pitch"]["value"].as<std::string>())-90.;
     double yaw  =std::stod(meta["Xmp"]["Camera"]["Yaw"]["value"].as<std::string>());
     double roll =std::stod(meta["Xmp"]["Camera"]["Roll"]["value"].as<std::string>());
@@ -126,6 +129,8 @@ Svar read_attitude(const Svar& meta){
 }
 
 Svar read_attitudeSigma(const Svar& meta){
+    if(meta["Xmp"]["Camera"]["Pitch"].isUndefined())
+        return {{"pitch",100000.},{"yaw",100000.},{"roll",100000.}};
     return {{"pitch",1.},{"yaw",10.},{"roll",1.}};
 }
 
@@ -151,6 +156,46 @@ Svar read_camera(Svar meta)
                                 d[0],d[1],d[3],d[4],d[2]});
 }
 
+#include "Matrix.h"
+#include <GSLAM/core/SE3.h>
+
+using namespace GSLAM;
+
+Matrix3d rotation_matrix(std::vector<double> rig){
+   auto deg2rad=[](double i)->double{return 3.1415925/180*i;};
+   double cx = cos(deg2rad(rig[0]));
+   double cy = cos(deg2rad(rig[1]));
+   double cz = cos(deg2rad(rig[2]));
+   double sx = sin(deg2rad(rig[0]));
+   double sy = sin(deg2rad(rig[1]));
+   double sz = sin(deg2rad(rig[2]));
+
+   Matrix3d Rx ( {  1,  0,  0,
+                  0, cx,-sx,
+                  0, sx, cx});
+   Matrix3d Ry ( { cy,  0, sy,
+                  0,  1,  0,
+                -sy,  0, cy});
+   Matrix3d Rz ( { cz,-sz,  0,
+                 sz, cz,  0,
+                  0,  0,  1});
+   return Rx*Ry*Rz;
+}
+
+Svar read_pose(Svar meta){
+    if(meta["Xmp"]["Camera"]["RigRelatives"].isUndefined())
+        return Svar();
+
+    std::string rigss=meta["Xmp"]["Camera"]["RigRelatives"]["value"].as<std::string>();
+    std::vector<double> rig=Svar::parse_json("["+rigss+"]").castAs<std::vector<double>>();
+    auto m = rotation_matrix(rig);
+
+    pi::SO3d so3;
+    so3.fromMatrix(m.data());
+
+    return {0.,0.,0.,so3.x,so3.y,so3.z,so3.w};
+}
+
 int main(int argc,char** argv){
     svar.parseMain(argc,argv);
 
@@ -167,6 +212,7 @@ REGISTER_SVAR_MODULE(exiv2){
     svar["read_attitude"]=read_attitude;
     svar["read_attitudeSigma"]=read_attitudeSigma;
     svar["read_camera"]=read_camera;
+    svar["read_pose"]=read_pose;
 }
 
 EXPORT_SVAR_INSTANCE
