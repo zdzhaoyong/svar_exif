@@ -182,7 +182,33 @@ Matrix3d rotation_matrix(std::vector<double> rig){
    return Rx*Ry*Rz;
 }
 
+std::string read_serial_number(Svar meta){
+    return meta["Exif"]["Photo"]["BodySerialNumber"]["value"].as<std::string>();
+}
+
 Svar read_pose(Svar meta){
+    std::string serial= read_serial_number(meta);
+    std::string band  = meta["Xmp"]["Camera"]["BandName"]["value"].as<std::string>();
+    Svar lut;
+    lut["RX01-1838128-SC"]["Green"]={0.000,0.000,0.000,0.0,0.0,0.0};
+    lut["RX01-1838128-SC"]["Blue"]={0.000,0.000,0.000,0.454, 0.150, -0.144};
+    lut["RX01-1838128-SC"]["Red"] ={0.000,0.000,0.000,0.340, 0.10, -0.121};
+    lut["RX01-1838128-SC"]["NIR"] ={0.030,0.021,0.000,0.367, 0.184, 0.141};
+    lut["RX01-1838128-SC"]["RedEdge"]={0.015,0.011,0.000,0.222, 0.328, -0.065};
+
+    Svar luv = lut[serial][band];
+
+    if(luv.isArray()){
+        std::vector<double> rig=luv.castAs<std::vector<double>>();
+//        std::cout<<rig<<std::endl;
+        auto m = rotation_matrix(std::vector<double>(rig.begin()+3,rig.end()));
+
+        pi::SO3d so3;
+        so3.fromMatrix(m.data());
+
+        return {rig[0],rig[1],rig[2],so3.x,so3.y,so3.z,so3.w};
+    }
+
     if(meta["Xmp"]["Camera"]["RigRelatives"].isUndefined())
         return Svar();
 
@@ -192,6 +218,7 @@ Svar read_pose(Svar meta){
 
     pi::SO3d so3;
     so3.fromMatrix(m.data());
+//    std::cout<<Svar(rig)<<std::endl;
 
     return {0.,0.,0.,so3.x,so3.y,so3.z,so3.w};
 }
@@ -205,6 +232,9 @@ int main(int argc,char** argv){
 }
 
 REGISTER_SVAR_MODULE(exiv2){
+    sv::Class<std::string>()
+            .def("__double__",[](std::string self){return std::stod(self);});
+
     svar["read_meta"]=readMeta;
     svar["read_timestamp"]=read_timestamp;
     svar["read_gps"] =read_gps;
